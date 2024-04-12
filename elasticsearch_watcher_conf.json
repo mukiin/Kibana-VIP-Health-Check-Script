@@ -1,0 +1,90 @@
+{
+  "trigger": {
+    "schedule": {
+      "interval": "15m"
+    }
+  },
+  "input": {
+    "search": {
+      "request": {
+        "search_type": "query_then_fetch",
+        "indices": [
+          "YOUR_INDEX_NAME"
+        ],
+        "rest_total_hits_as_int": true,
+        "body": {
+          "size": 1,
+          "query": {
+            "bool": {
+              "must": [
+                {
+                  "range": {
+                    "@timestamp": {
+                      "gte": "now-15m"
+                    }
+                  }
+                }
+              ],
+              "must_not": [
+                {
+                  "term": {
+                    "http_code": 200
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "condition": {
+    "script": {
+      "source": "ctx.payload.hits.total > 0",
+      "lang": "painless"
+    }
+  },
+  "actions": {
+    "send_email": {
+      "condition": {
+        "script": {
+          "source": "ctx.payload.hits.total > 0",
+          "lang": "painless"
+        }
+      },
+      "transform": {
+        "script": {
+          "source": """
+            def utcDateTime = ZonedDateTime.ofInstant(ctx.execution_time.toInstant(), ZoneId.of("UTC"));
+            def BerlinDateTime = utcDateTime.withZoneSameInstant(ZoneId.of("Europe/Berlin"));
+            def formattedDateTime = BerlinDateTime.format(DateTimeFormatter.ofPattern("HH:mm:ss | dd/MM/yyyy "));
+            def hits = ctx.payload.hits.hits[0]._source;
+            def message = "Alert triggered at " + formattedDateTime + "!<br><br>";
+            message += "Details:<br>";
+            message += "Kibana VIP host: " + hits.host + " is unreachable!<br><br>";
+            return message;
+          """,
+          "lang": "painless"
+        }
+      },
+      "email": {
+        "account": "smtp_account",
+        "profile": "standard",
+        "to": [
+          "YOUR@MAIL.COM"
+        ],
+        "cc": [
+          "YOUR@CC.COM"
+        ],
+        "subject": "Watcher Notification",
+        "body": {
+          "html": """<h1><span style="font-family:sans-serif">Kibana VIP Availability Alerting</span></h1>
+          {{ctx.payload._value}}
+          <footer style="font-family:sans-serif; text-align: center; text-decoration:none; ">
+          </footer>
+          """
+        }
+      }
+    }
+  }
+}
